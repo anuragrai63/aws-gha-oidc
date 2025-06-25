@@ -116,7 +116,7 @@ EOF
 
 
   tags = {
-    Name = "tf-instance22"
+    Name = "tf-instance"
   }
 
 
