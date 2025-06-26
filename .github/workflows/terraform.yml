@@ -1,3 +1,47 @@
+#
+# Terraform GitHub Actions Workflow
+#
+# This workflow automates the deployment and validation of Terraform configurations using GitHub Actions.
+#
+# Workflow Triggers:
+# - Runs on push events to the `main` branch.
+# - Runs on pull requests.
+#
+# Permissions:
+# - Grants required permissions for OIDC authentication, repository content access, pull request comments, security events, and actions.
+#
+# Environment Variables:
+# - TF_LOG: Sets Terraform logging level.
+# - AWS_REGION: AWS region, sourced from repository secrets.
+# - GITHUB_TOKEN: GitHub token for authentication.
+#
+# Job: deploy
+# - Runs on Ubuntu latest.
+# - Sets working directory to `/terraform/`.
+#
+# Steps:
+# 1. Checks out repository code.
+# 2. Configures AWS credentials using OIDC and secrets.
+# 3. Sets up Terraform CLI.
+# 4. Checks Terraform formatting (`terraform fmt`).
+# 5. Initializes Terraform with backend configuration from secrets.
+# 6. Validates Terraform configuration.
+# 7. Installs and runs TFLint for Terraform linting.
+# 8. Posts TFLint results as a comment on pull requests.
+# 9. Outputs TFLint results to logs.
+# 10. Runs `terraform plan` on pull requests.
+# 11. Runs Checkov for security and compliance scanning, outputs SARIF for GitHub Security tab.
+# 12. Uploads SARIF results for code scanning.
+# 13. Posts Terraform validation and plan results as a comment on pull requests.
+# 14. Fails the workflow if `terraform plan` fails.
+# 15. Applies Terraform changes automatically on push to `main`.
+#
+# Notes:
+# - Secrets required: AWS_REGION, AWS_ROLE, AWS_SOURCE_ACCOUNT_ID, AWS_BUCKET_NAME, AWS_BUCKET_KEY_NAME, GITHUB_TOKEN.
+# - Uses OIDC for secure AWS authentication.
+# - Provides detailed feedback on pull requests via comments.
+# - Integrates security scanning and code quality checks.
+#
 name: "Terraform action"
 on:
   push:
