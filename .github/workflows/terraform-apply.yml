@@ -44,9 +44,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: "Switching to Terraform directory"
-        run: echo "Switching to Terraform directory" && cd terraform/
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -65,6 +62,8 @@ jobs:
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           AWS_BUCKET_KEY_NAME: ${{ secrets.AWS_BUCKET_KEY_NAME }}
         run: terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${AWS_BUCKET_KEY_NAME}" -backend-config="region=${AWS_REGION}"
+        working-directory: terraform/
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false
+        working-directory: terraform/
