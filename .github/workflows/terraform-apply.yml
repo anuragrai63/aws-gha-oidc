@@ -1,0 +1,68 @@
+name: "Terraform Apply"
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+env:
+  TF_LOG: INFO
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  terraform-apply:
+    if: github.event.head_commit.message != 'skip-apply' # Optional: allow skipping
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform/
+    environment:
+      name: production
+
+    steps:
+      - name: Check if triggered by a merged PR
+        id: check-pr
+        run: |
+          echo "GITHUB_EVENT_NAME=${{ github.event_name }}"
+          echo "GITHUB_REF=${{ github.ref }}"
+          echo "GITHUB_SHA=${{ github.sha }}"
+          
+          PR=$(gh pr list --state merged --search ${{ github.sha }} --json number -q '.[0].number' || echo "")
+          if [[ -z "$PR" ]]; then
+            echo "This commit did not come from a merged PR. Skipping apply."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+          source-account-id: ${{ secrets.AWS_SOURCE_ACCOUNT_ID }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHub-OIDC-TERRAFORM
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.2.5
+
+      - name: Terraform Init
+        env:
+          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+          AWS_BUCKET_KEY_NAME: ${{ secrets.AWS_BUCKET_KEY_NAME }}
+        run: terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${AWS_BUCKET_KEY_NAME}" -backend-config="region=${AWS_REGION}"
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false
