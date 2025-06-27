@@ -23,8 +23,7 @@ jobs:
       run:
         shell: bash
         working-directory: terraform/
-    environment:
-      name: production
+    
 
     steps:
       - name: Check if triggered by a merged PR
