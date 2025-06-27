@@ -1,3 +1,4 @@
+/* 
 provider "aws" {
   region = "us-east-1"
 }
@@ -213,3 +214,6 @@ resource "aws_iam_instance_profile" "mgmt_vm_profile" {
 variable "region" {
   default = "us-east-1"
 }
+
+*/
+
