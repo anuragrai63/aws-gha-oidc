@@ -17,7 +17,7 @@ env:
 
 jobs:
   terraform-apply:
-    if: github.event.head_commit.message != 'skip-apply' # Optional: allow skipping
+    if: github.event.head_commit.message != 'skip-apply'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,7 +46,6 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE }}
-          source-account-id: ${{ secrets.AWS_SOURCE_ACCOUNT_ID }}
           aws-region: ${{ secrets.AWS_REGION }}
           role-session-name: GitHub-OIDC-TERRAFORM
 
@@ -65,3 +64,26 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false
         working-directory: terraform/
+
+      - name: Comment on PR with Apply Status
+        if: success()
+        uses: actions/github-script@v6
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const pr = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+            });
+
+            if (pr.data.length > 0) {
+              const prNumber = pr.data[0].number;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `✅ **Terraform Apply Completed Successfully**\n\nAll resources have been provisioned as per the merged PR.\n\n*Workflow: ${context.workflow}*`
+              });
+            }
