@@ -79,8 +79,7 @@ resource "aws_eip" "nat" {
   }
 }
 
-# Resource: aws_nat_gateway
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/nat_gateway
+
 resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public-us-east-1a.id
@@ -89,8 +88,7 @@ resource "aws_nat_gateway" "nat" {
     Name = "nat"
   }
 
-  # To ensure proper ordering, it is recommended to add an explicit dependency
-  # on the Internet Gateway for the VPC.
+  
   depends_on = [aws_internet_gateway.igw]
 }
 
@@ -120,8 +118,7 @@ resource "aws_route_table" "public" {
   }
 }
 
-# Resource: aws_route_table_association
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association
+
 resource "aws_route_table_association" "private-us-east-1a" {
   subnet_id      = aws_subnet.private-us-east-1a.id
   route_table_id = aws_route_table.private.id
@@ -142,8 +139,7 @@ resource "aws_route_table_association" "public-us-east-1b" {
   route_table_id = aws_route_table.public.id
 }
 
-# Resource: aws_iam_role
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role
+
 resource "aws_iam_role" "demo" {
   name = "eks-cluster-demo"
 
@@ -170,8 +166,7 @@ resource "aws_iam_role_policy_attachment" "demo-AmazonEKSClusterPolicy" {
   role       = aws_iam_role.demo.name
 }
 
-# Resource: aws_eks_cluster
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster
+
 resource "aws_eks_cluster" "demo" {
   name     = "demo"
   role_arn = aws_iam_role.demo.arn
@@ -185,8 +180,7 @@ resource "aws_eks_cluster" "demo" {
     ]
   }
 
-  # Ensure that IAM Role permissions are created before and deleted after EKS Cluster handling.
-  # Otherwise, EKS will not be able to properly delete EKS managed EC2 infrastructure such as Security Groups.
+  
   depends_on = [aws_iam_role_policy_attachment.demo-AmazonEKSClusterPolicy]
 }
 
@@ -221,8 +215,7 @@ resource "aws_iam_role_policy_attachment" "nodes-AmazonEC2ContainerRegistryReadO
   role       = aws_iam_role.nodes.name
 }
 
-# Resource: aws_eks_node_group
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group
+
 resource "aws_eks_node_group" "general" {
   cluster_name    = aws_eks_cluster.demo.name
   node_group_name = "general"
@@ -246,11 +239,71 @@ resource "aws_eks_node_group" "general" {
     max_unavailable = 1
   }
 
-  # Ensure that IAM Role permissions are created before and deleted after EKS Node Group handling.
-  # Otherwise, EKS will not be able to properly delete EC2 Instances and Elastic Network Interfaces.
+  
   depends_on = [
     aws_iam_role_policy_attachment.nodes-AmazonEKSWorkerNodePolicy,
     aws_iam_role_policy_attachment.nodes-AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.nodes-AmazonEC2ContainerRegistryReadOnly,
   ]
+}
+
+resource "aws_security_group" "my_sg" {
+  name   = "my_sg"
+  vpc_id = aws_vpc.my_vpc.id
+
+  ingress {
+    from_port   = "22"
+    to_port     = "22"
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    protocol    = "-1"
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = "80"
+    to_port     = "80"
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    protocol    = "-1"
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "my_sg"
+  }
+
+}
+
+resource "aws_instance" "foo" {
+  ami           = "ami-0277155c3f0ab2930" # us-east-1
+  subnet_id     = aws_subnet.private-us-east-1a.id
+  instance_type = "t2.micro"
+  #  vpc_security_group_ids = [aws_security_group.my_sg.id]
+  security_groups = [aws_vpc.main.id]
+
+  user_data = <<EOF
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+EC2_AVAIL_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+echo "<h1>Hello World from $(hostname -f) in AZ $EC2_AVAIL_ZONE </h1>" > /var/www/html/index.html
+EOF                    
+
+
+  tags = {
+    Name = "tf-instance-gha-oidc"
+  }
 }
