@@ -249,7 +249,7 @@ resource "aws_eks_node_group" "general" {
 
 resource "aws_security_group" "my_sg" {
   name   = "my_sg"
-  vpc_id = aws_vpc.my_vpc.id
+  vpc_id = aws_vpc.main.id
 
   ingress {
     from_port   = "22"
@@ -290,7 +290,7 @@ resource "aws_instance" "foo" {
   subnet_id     = aws_subnet.private-us-east-1a.id
   instance_type = "t2.micro"
   #  vpc_security_group_ids = [aws_security_group.my_sg.id]
-  security_groups = [aws_vpc.main.id]
+  security_groups = [aws_security_group.my_sg.id]
 
   user_data = <<EOF
 #!/bin/bash
