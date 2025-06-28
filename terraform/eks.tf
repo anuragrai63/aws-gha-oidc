@@ -291,15 +291,19 @@ resource "aws_instance" "foo" {
   instance_type = "t2.micro"
   #  vpc_security_group_ids = [aws_security_group.my_sg.id]
   security_groups = [aws_security_group.my_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.full_access.name
 
   user_data = <<EOF
 #!/bin/bash
 yum update -y
-yum install -y httpd
-systemctl start httpd
-systemctl enable httpd
-EC2_AVAIL_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
-echo "<h1>Hello World from $(hostname -f) in AZ $EC2_AVAIL_ZONE </h1>" > /var/www/html/index.html
+yum install -y curl unzip
+# Install kubectl
+curl -o /usr/local/bin/kubectl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/1.29.0/2024-04-16/bin/linux/amd64/kubectl"
+chmod +x /usr/local/bin/kubectl
+
+# Install eksctl
+curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
+mv /tmp/eksctl /usr/local/bin
 EOF                    
 
 
@@ -307,3 +311,29 @@ EOF
     Name = "tf-instance-gha-oidc"
   }
 }
+
+resource "aws_iam_role" "full_access" {
+    name = "ec2-full-access-role"
+
+    assume_role_policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+            Effect = "Allow"
+            Principal = {
+                Service = "ec2.amazonaws.com"
+            }
+            Action = "sts:AssumeRole"
+        }]
+    })
+}
+
+resource "aws_iam_role_policy_attachment" "full_access" {
+    role       = aws_iam_role.full_access.name
+    policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+resource "aws_iam_instance_profile" "full_access" {
+    name = "ec2-full-access-profile"
+    role = aws_iam_role.full_access.name
+}
+
