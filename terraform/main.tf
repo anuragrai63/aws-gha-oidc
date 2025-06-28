@@ -1,3 +1,4 @@
+/*
 terraform {
   required_version = "~> 1.2.5"
   required_providers {
@@ -134,3 +135,4 @@ output "web_pub_ip" {
 
   value = aws_instance.foo.public_ip
 }
+*/

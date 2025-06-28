@@ -1,219 +1,285 @@
-/* 
-provider "aws" {
-  region = "us-east-1"
+terraform {
+  required_version = "~> 1.2.5"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.45"
+    }
+  }
+  backend "s3" {}
 }
 
-# 1. VPC
-resource "aws_vpc" "eks_vpc" {
+resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-  tags = { Name = "eks-vpc" }
+
+  tags = {
+    Name = "main"
+  }
 }
 
-# 2. Subnets
-resource "aws_subnet" "eks_subnet_a" {
-  vpc_id                  = aws_vpc.eks_vpc.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = true
-  tags = { Name = "eks-subnet-a" }
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "igw"
+  }
 }
 
-resource "aws_subnet" "eks_subnet_b" {
-  vpc_id                  = aws_vpc.eks_vpc.id
-  cidr_block              = "10.0.2.0/24"
-  availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = true
-  tags = { Name = "eks-subnet-b" }
+resource "aws_subnet" "private-us-east-1a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.0.0/19"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    "Name"                            = "private-us-east-1a"
+    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/cluster/demo"      = "owned"
+  }
 }
 
-# 3. Internet Gateway
-resource "aws_internet_gateway" "eks_igw" {
-  vpc_id = aws_vpc.eks_vpc.id
-  tags = { Name = "eks-igw" }
+resource "aws_subnet" "private-us-east-1b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.32.0/19"
+  availability_zone = "us-east-1b"
+
+  tags = {
+    "Name"                            = "private-us-east-1b"
+    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/cluster/demo"      = "owned"
+  }
 }
 
-# 4. Route Table
-resource "aws_route_table" "eks_rt" {
-  vpc_id = aws_vpc.eks_vpc.id
-  tags = { Name = "eks-rt" }
+resource "aws_subnet" "public-us-east-1a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.64.0/19"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    "Name"                       = "public-us-east-1a"
+    "kubernetes.io/role/elb"     = "1"
+    "kubernetes.io/cluster/demo" = "owned"
+  }
 }
 
-resource "aws_route" "eks_route" {
-  route_table_id         = aws_route_table.eks_rt.id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.eks_igw.id
+resource "aws_subnet" "public-us-east-1b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.96.0/19"
+  availability_zone = "us-east-1b"
+
+  tags = {
+    "Name"                       = "public-us-east-1b"
+    "kubernetes.io/role/elb"     = "1"
+    "kubernetes.io/cluster/demo" = "owned"
+  }
+}
+resource "aws_eip" "nat" {
+  vpc = true
+
+  tags = {
+    Name = "nat"
+  }
 }
 
-resource "aws_route_table_association" "eks_rta_a" {
-  subnet_id      = aws_subnet.eks_subnet_a.id
-  route_table_id = aws_route_table.eks_rt.id
-}
+# Resource: aws_nat_gateway
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/nat_gateway
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public-us-east-1a.id
 
-resource "aws_route_table_association" "eks_rta_b" {
-  subnet_id      = aws_subnet.eks_subnet_b.id
-  route_table_id = aws_route_table.eks_rt.id
-}
-
-# 5. Security Group (allow port 443 only from VPC CIDR)
-resource "aws_security_group" "eks_sg" {
-  name        = "eks-sg"
-  description = "Allow 443 from VPC"
-  vpc_id      = aws_vpc.eks_vpc.id
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.eks_vpc.cidr_block]
+  tags = {
+    Name = "nat"
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "eks-sg" }
+  # To ensure proper ordering, it is recommended to add an explicit dependency
+  # on the Internet Gateway for the VPC.
+  depends_on = [aws_internet_gateway.igw]
 }
 
-# 6. EKS Cluster
-resource "aws_eks_cluster" "eks" {
-  name     = "eks-cluster"
-  role_arn = aws_iam_role.eks_cluster_role.arn
-  version  = "1.32"
+# Resource: aws_route_table
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route = [
+    {
+      cidr_block                 = "0.0.0.0/0"
+      nat_gateway_id             = aws_nat_gateway.nat.id
+      carrier_gateway_id         = ""
+      destination_prefix_list_id = ""
+      egress_only_gateway_id     = ""
+      gateway_id                 = ""
+      instance_id                = ""
+      ipv6_cidr_block            = ""
+      local_gateway_id           = ""
+      network_interface_id       = ""
+      transit_gateway_id         = ""
+      vpc_endpoint_id            = ""
+      vpc_peering_connection_id  = ""
+    },
+  ]
+
+  tags = {
+    Name = "private"
+  }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route = [
+    {
+      cidr_block                 = "0.0.0.0/0"
+      gateway_id                 = aws_internet_gateway.igw.id
+      nat_gateway_id             = ""
+      carrier_gateway_id         = ""
+      destination_prefix_list_id = ""
+      egress_only_gateway_id     = ""
+      instance_id                = ""
+      ipv6_cidr_block            = ""
+      local_gateway_id           = ""
+      network_interface_id       = ""
+      transit_gateway_id         = ""
+      vpc_endpoint_id            = ""
+      vpc_peering_connection_id  = ""
+    },
+  ]
+
+  tags = {
+    Name = "public"
+  }
+}
+
+# Resource: aws_route_table_association
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route_table_association
+resource "aws_route_table_association" "private-us-east-1a" {
+  subnet_id      = aws_subnet.private-us-east-1a.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private-us-east-1b" {
+  subnet_id      = aws_subnet.private-us-east-1b.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "public-us-east-1a" {
+  subnet_id      = aws_subnet.public-us-east-1a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public-us-east-1b" {
+  subnet_id      = aws_subnet.public-us-east-1b.id
+  route_table_id = aws_route_table.public.id
+}
+
+# Resource: aws_iam_role
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role
+resource "aws_iam_role" "demo" {
+  name = "eks-cluster-demo"
+
+  assume_role_policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "eks.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+POLICY
+}
+
+# Resource: aws_iam_role_policy_attachment
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment
+resource "aws_iam_role_policy_attachment" "demo-AmazonEKSClusterPolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.demo.name
+}
+
+# Resource: aws_eks_cluster
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster
+resource "aws_eks_cluster" "demo" {
+  name     = "demo"
+  role_arn = aws_iam_role.demo.arn
 
   vpc_config {
-    subnet_ids         = [aws_subnet.eks_subnet_a.id, aws_subnet.eks_subnet_b.id]
-    security_group_ids = [aws_security_group.eks_sg.id]
+    subnet_ids = [
+      aws_subnet.private-us-east-1a.id,
+      aws_subnet.private-us-east-1b.id,
+      aws_subnet.public-us-east-1a.id,
+      aws_subnet.public-us-east-1b.id
+    ]
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy]
+  # Ensure that IAM Role permissions are created before and deleted after EKS Cluster handling.
+  # Otherwise, EKS will not be able to properly delete EKS managed EC2 infrastructure such as Security Groups.
+  depends_on = [aws_iam_role_policy_attachment.demo-AmazonEKSClusterPolicy]
 }
 
-# 7. EKS Cluster IAM Role
-resource "aws_iam_role" "eks_cluster_role" {
-  name = "eks-cluster-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_assume_role_policy.json
+
+resource "aws_iam_role" "nodes" {
+  name = "eks-node-group-nodes"
+
+  assume_role_policy = jsonencode({
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+    Version = "2012-10-17"
+  })
 }
 
-data "aws_iam_policy_document" "eks_assume_role_policy" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["eks.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
-  role       = aws_iam_role.eks_cluster_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-}
-
-# 8. EKS Node Group
-resource "aws_iam_role" "eks_node_role" {
-  name = "eks-node-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_node_assume_role_policy.json
-}
-
-data "aws_iam_policy_document" "eks_node_assume_role_policy" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "eks_node_AmazonEKSWorkerNodePolicy" {
-  role       = aws_iam_role.eks_node_role.name
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEKSWorkerNodePolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.nodes.name
 }
 
-resource "aws_iam_role_policy_attachment" "eks_node_AmazonEC2ContainerRegistryReadOnly" {
-  role       = aws_iam_role.eks_node_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_node_AmazonEKS_CNI_Policy" {
-  role       = aws_iam_role.eks_node_role.name
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEKS_CNI_Policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.nodes.name
 }
 
-resource "aws_eks_node_group" "eks_nodes" {
-  cluster_name    = aws_eks_cluster.eks.name
-  node_group_name = "eks-node-group"
-  node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = [aws_subnet.eks_subnet_a.id, aws_subnet.eks_subnet_b.id]
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEC2ContainerRegistryReadOnly" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.nodes.name
+}
+
+# Resource: aws_eks_node_group
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group
+resource "aws_eks_node_group" "general" {
+  cluster_name    = aws_eks_cluster.demo.name
+  node_group_name = "general"
+  node_role_arn   = aws_iam_role.nodes.arn
+
+  subnet_ids = [
+    aws_subnet.private-us-east-1a.id,
+    aws_subnet.private-us-east-1b.id
+  ]
+
+  capacity_type  = "ON_DEMAND"
+  instance_types = ["t3.small"]
 
   scaling_config {
     desired_size = 2
-    max_size     = 3
+    max_size     = 5
     min_size     = 1
   }
 
+  update_config {
+    max_unavailable = 1
+  }
+
+  # Ensure that IAM Role permissions are created before and deleted after EKS Node Group handling.
+  # Otherwise, EKS will not be able to properly delete EC2 Instances and Elastic Network Interfaces.
   depends_on = [
-    aws_iam_role_policy_attachment.eks_node_AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.eks_node_AmazonEC2ContainerRegistryReadOnly,
-    aws_iam_role_policy_attachment.eks_node_AmazonEKS_CNI_Policy
+    aws_iam_role_policy_attachment.nodes-AmazonEKSWorkerNodePolicy,
+    aws_iam_role_policy_attachment.nodes-AmazonEKS_CNI_Policy,
+    aws_iam_role_policy_attachment.nodes-AmazonEC2ContainerRegistryReadOnly,
   ]
 }
-
-# 9. SSM VPC Endpoint
-resource "aws_vpc_endpoint" "ssm" {
-  vpc_id            = aws_vpc.eks_vpc.id
-  service_name      = "com.amazonaws.${var.region}.ssm"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        = [aws_subnet.eks_subnet_a.id, aws_subnet.eks_subnet_b.id]
-  security_group_ids = [aws_security_group.eks_sg.id]
-  private_dns_enabled = true
-}
-
-# 10. Management VM IAM Role for SSM
-resource "aws_iam_role" "mgmt_vm_role" {
-  name = "mgmt-vm-role"
-  assume_role_policy = data.aws_iam_policy_document.mgmt_vm_assume_role_policy.json
-}
-
-data "aws_iam_policy_document" "mgmt_vm_assume_role_policy" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "mgmt_vm_ssm" {
-  role       = aws_iam_role.mgmt_vm_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-# 11. Management VM (EC2 Instance)
-resource "aws_instance" "mgmt_vm" {
-  ami           = "ami-0c94855ba95c71c99" # Amazon Linux 2 AMI (update as needed)
-  instance_type = "t3.micro"
-  subnet_id     = aws_subnet.eks_subnet_a.id
-  vpc_security_group_ids = [aws_security_group.eks_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.mgmt_vm_profile.name
-
-  tags = { Name = "mgmt-vm" }
-}
-
-resource "aws_iam_instance_profile" "mgmt_vm_profile" {
-  name = "mgmt-vm-profile"
-  role = aws_iam_role.mgmt_vm_role.name
-}
-
-variable "region" {
-  default = "us-east-1"
-}
-
-*/
-
