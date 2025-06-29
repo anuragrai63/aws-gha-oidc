@@ -306,7 +306,7 @@ curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/do
 mv /tmp/eksctl /usr/local/bin
 
 # Setup kubeconfig
-aws eks update-kubeconfig --region ${AWS::Region} --name demo
+aws eks update-kubeconfig --region us-east-1 --name demo
 EOF
 
   tags = {
