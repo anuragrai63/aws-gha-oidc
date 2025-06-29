@@ -341,24 +341,32 @@ resource "aws_iam_instance_profile" "full_access" {
     role = aws_iam_role.full_access.name
 }
 
-resource "aws_auth_config_map" "eks" {
-    depends_on = [aws_eks_node_group.general]
+resource "kubernetes_config_map" "aws_auth" {
+  depends_on = [aws_eks_node_group.general]
 
-    metadata {
-        name      = "aws-auth"
-        namespace = "kube-system"
-    }
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
 
-    role_mapping {
-        role_arn  = aws_iam_role.nodes.arn
-        username  = "system:node:{{EC2PrivateDNSName}}"
-        groups    = ["system:bootstrappers", "system:nodes"]
-    }
-
-    role_mapping {
-        role_arn  = aws_iam_role.full_access.arn
-        username  = "admin"
-        groups    = ["system:masters"]
-    }
+  data = {
+    mapRoles = yamlencode([
+      {
+        rolearn  = aws_iam_role.nodes.arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups   = [
+          "system:bootstrappers",
+          "system:nodes"
+        ]
+      },
+      {
+        rolearn  = aws_iam_role.full_access.arn
+        username = "admin"
+        groups   = [
+          "system:masters"
+        ]
+      }
+    ])
+  }
 }
 
