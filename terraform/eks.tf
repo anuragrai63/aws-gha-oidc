@@ -291,6 +291,7 @@ resource "aws_instance" "foo" {
   instance_type              = "t2.micro"
   vpc_security_group_ids     = [aws_security_group.my_sg.id]
   iam_instance_profile       = aws_iam_instance_profile.full_access.name
+  depends_on = [ aws_auth_config_map.eks ]
 
   user_data = <<EOF
 #!/bin/bash
@@ -338,5 +339,26 @@ resource "aws_iam_role_policy_attachment" "full_access" {
 resource "aws_iam_instance_profile" "full_access" {
     name = "ec2-full-access-profile"
     role = aws_iam_role.full_access.name
+}
+
+resource "aws_auth_config_map" "eks" {
+    depends_on = [aws_eks_node_group.general]
+
+    metadata {
+        name      = "aws-auth"
+        namespace = "kube-system"
+    }
+
+    role_mapping {
+        role_arn  = aws_iam_role.nodes.arn
+        username  = "system:node:{{EC2PrivateDNSName}}"
+        groups    = ["system:bootstrappers", "system:nodes"]
+    }
+
+    role_mapping {
+        role_arn  = aws_iam_role.full_access.arn
+        username  = "admin"
+        groups    = ["system:masters"]
+    }
 }
 
