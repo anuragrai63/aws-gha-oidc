@@ -298,7 +298,7 @@ yum update -y
 yum install -y curl unzip
 
 # Install kubectl
-curl -o /usr/local/bin/kubectl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/1.29.0/2024-04-16/bin/linux/amd64/kubectl"
+curl -o /usr/local/bin/kubectl -LO "curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.33.0/2025-05-01/bin/linux/amd64/kubectl"
 chmod +x /usr/local/bin/kubectl
 
 # Install eksctl
