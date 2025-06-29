@@ -291,7 +291,7 @@ resource "aws_instance" "foo" {
   instance_type              = "t2.micro"
   vpc_security_group_ids     = [aws_security_group.my_sg.id]
   iam_instance_profile       = aws_iam_instance_profile.full_access.name
-  depends_on = [ aws_auth_config_map.eks ]
+  
 
   user_data = <<EOF
 #!/bin/bash
