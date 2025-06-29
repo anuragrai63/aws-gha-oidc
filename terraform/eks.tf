@@ -252,51 +252,51 @@ resource "aws_security_group" "my_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port   = "22"
-    to_port     = "22"
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    protocol    = "-1"
-    to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port   = "80"
-    to_port     = "80"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
     from_port   = 0
-    protocol    = "-1"
     to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
     Name = "my_sg"
   }
-
 }
 
 resource "aws_instance" "foo" {
-  ami           = "ami-0277155c3f0ab2930" # us-east-1
-  subnet_id     = aws_subnet.private-us-east-1a.id
-  instance_type = "t2.micro"
-  #  vpc_security_group_ids = [aws_security_group.my_sg.id]
-  security_groups = [aws_security_group.my_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.full_access.name
+  ami                         = "ami-0277155c3f0ab2930" # us-east-1
+  subnet_id                  = aws_subnet.public-us-east-1a.id
+  associate_public_ip_address = true
+  instance_type              = "t2.micro"
+  vpc_security_group_ids     = [aws_security_group.my_sg.id]
+  iam_instance_profile       = aws_iam_instance_profile.full_access.name
 
   user_data = <<EOF
 #!/bin/bash
 yum update -y
 yum install -y curl unzip
+
 # Install kubectl
 curl -o /usr/local/bin/kubectl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/1.29.0/2024-04-16/bin/linux/amd64/kubectl"
 chmod +x /usr/local/bin/kubectl
@@ -304,13 +304,16 @@ chmod +x /usr/local/bin/kubectl
 # Install eksctl
 curl --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
 mv /tmp/eksctl /usr/local/bin
-EOF                    
 
+# Setup kubeconfig
+aws eks update-kubeconfig --region ${AWS::Region} --name demo
+EOF
 
   tags = {
     Name = "tf-instance-gha-oidc"
   }
 }
+
 
 resource "aws_iam_role" "full_access" {
     name = "ec2-full-access-role"
